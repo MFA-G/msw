@@ -37,6 +37,10 @@ export function defineSetupServerApi(
     restoreHandlers: network.restoreHandlers.bind(network),
     listHandlers: network.listHandlers.bind(network),
     close() {
+      if (network.readyState === NetworkReadyState.DISABLED) {
+        return
+      }
+
       network.disable()
     },
   }
