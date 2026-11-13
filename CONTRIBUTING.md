@@ -132,56 +132,39 @@ We follow an example-driven testing paradigm, meaning that each integration test
 
 #### Browser integration tests
 
-You can find all the browser integration tests under `./test/browser`. Those tests are run with Playwright and usually consist of two parts:
+Browser integration tests run in [Vitest Browser Mode](https://vitest.dev/guide/browser/) with the Playwright provider. They live under `./test` next to the other integration tests. The file name says where a test runs:
 
-- `[test-name].mocks.ts`, the usage example of MSW;
-- `[test-name].test.ts`, the test suite that loads the usage example, does actions and performs assertions.
+- `*.test.ts` runs in both Node.js and the browser;
+- `*.browser.test.ts` runs only in the browser;
+- `*.pw.test.ts` uses Playwright directly for the tests that need the full page lifecycle or multiple tabs.
 
-It's also a great idea to get familiar with our Playwright configuration and extensions:
+You can find the list of the test suites in [`./test/README.md`](./test/README.md).
 
-- [**Playwright configuration file**](./test/browser/playwright.config.ts)
-- [Playwright extensions](./test/browser/playwright.extend.ts)
-
-Let's write an example integration test that asserts the interception of a GET request. First, start with the `*.mocks.ts` file:
-
-```js
-// test/browser/example.mocks.ts
-import { http, HttpResponse } from 'msw'
-import { setupWorker } from 'msw/browser'
-
-const worker = setupWorker(
-  http.get('/books', () => {
-    return HttpResponse.json([
-      {
-        id: 'ea42ffcb-e729-4dd5-bfac-7a5b645cb1da',
-        title: 'The Lord of the Rings',
-        publishedAt: -486867600,
-      },
-    ])
-  }),
-)
-
-worker.start()
-```
-
-> Notice how there's nothing test-specific in the example? The `example.mocks.ts` file is a copy-paste example of intercepting the `GET /books` request. This allows to share these mocks with the users as a legitimate example, because it is!
-
-Once the `*.mocks.ts` file is written, proceed by creating a test file:
+Let's write an example integration test that asserts the interception of a GET request:
 
 ```ts
-// test/browser/example.test.ts
-import * as path from 'path'
-import { test, expect } from './playwright.extend'
+// test/protocols/http/example.browser.test.ts
+import { http, HttpResponse } from 'msw'
+import { defineTestNetwork, expect } from '../../setup/vitest-helpers'
 
-test('returns a mocked response', async ({ loadExample, fetch }) => {
-  // Compile the given usage example on runtime.
-  await loadExample(new URL('./example.mocks.ts', import.meta.url))
+const test = defineTestNetwork({
+  handlers: [
+    http.get('*/books', () => {
+      return HttpResponse.json([
+        {
+          id: 'ea42ffcb-e729-4dd5-bfac-7a5b645cb1da',
+          title: 'The Lord of the Rings',
+          publishedAt: -486867600,
+        },
+      ])
+    }),
+  ],
+})
 
-  // Perform the "GET /books" request in the browser.
-  const res = await fetch('/books')
+test('returns a mocked response', async ({ fetch }) => {
+  const response = await fetch('/books')
 
-  // Assert the returned response body.
-  expect(await res.json()).toEqual([
+  await expect(response.json()).resolves.toEqual([
     {
       id: 'ea42ffcb-e729-4dd5-bfac-7a5b645cb1da',
       title: 'The Lord of the Rings',
@@ -190,62 +173,29 @@ test('returns a mocked response', async ({ loadExample, fetch }) => {
   ])
 })
 ```
+
+`defineTestNetwork()` starts the worker and resets its handlers before each test. The running instance is available as the `network` fixture.
 
 ##### Running all browser tests
 
 Make sure Playwright chromium has been installed before running browser tests.
 
 ```sh
+pnpm exec playwright install chromium
 pnpm test:browser
 ```
 
 #### Running a single browser test
 
 ```sh
-pnpm test:browser ./test/browser/example.test.ts
+pnpm test:browser ./test/protocols/http/example.browser.test.ts
 ```
+
+The Playwright-based suites have their own commands: `pnpm test:playwright` runs the `*.pw.test.ts` tests, and `pnpm test:modules:browser` runs the tests from `./test/modules/browser`.
 
 #### Node.js integration test
 
-Integration tests showcase a usage example in Node.js and are often placed next to the in-browser tests. Node.js integration tests reside in the `./test/node` directory.
-
-Similar to the browser tests, these are going to contain a usage example and the assertions over it. However, for Node.js tests there is no need to create a separate `*.mocks.ts` file. Instead, keep the usage example in the test file directly.
-
-Let's replicate the same `GET /books` integration test in Node.js.
-
-```ts
-// test/node/example.test.ts
-import { http, HttpResponse } from 'msw'
-import { setupServer } from 'msw/node'
-
-const server = setupServer(
-  http.get('/books', () => {
-    return HttpResponse.json([
-      {
-        id: 'ea42ffcb-e729-4dd5-bfac-7a5b645cb1da',
-        title: 'The Lord of the Rings',
-        publishedAt: -486867600,
-      },
-    ])
-  }),
-)
-
-beforeAll(() => server.listen())
-
-afterAll(() => server.close())
-
-test('returns a mocked response', async () => {
-  const res = await fetch('/books')
-
-  expect(await res.json()).toEqual([
-    {
-      id: 'ea42ffcb-e729-4dd5-bfac-7a5b645cb1da',
-      title: 'The Lord of the Rings',
-      publishedAt: -486867600,
-    },
-  ])
-})
-```
+Node.js integration tests live under `./test` as well and use the same `defineTestNetwork()` helper. Their file name ends with `*.node.test.ts` so that they run only in Node.js. A plain `*.test.ts` file, like the example above, runs in both Node.js and the browser.
 
 ##### Running all Node.js tests
 
@@ -256,7 +206,7 @@ pnpm test:node
 ##### Running a single Node.js test
 
 ```sh
-pnpm test:node ./test/node/example.test.ts
+pnpm test:node ./test/protocols/http/example.node.test.ts
 ```
 
 ## Build
